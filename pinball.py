@@ -7,6 +7,8 @@ LOGS_ALLOWED = True
 screen = None
 SCREEN_WIDTH = 800
 running = True 
+game_over = True
+rkey_pressed, lkey_pressed = False, False
 
 # Ball parameters
 ball_radius = None
@@ -50,7 +52,7 @@ def generate_ball():
 
 # Function that update the ball posiiton center_x, center_y depending on a given angle and step
 def update_ball_position(angle, step):
-    global center_x, center_y, ball_angle, ball_step, ball_radius, screen
+    global center_x, center_y, ball_angle, ball_step, ball_radius, screen, game_over
     # Check if the ball touches the screen borders
     if center_x <= ball_radius or center_x >= screen.get_width() - ball_radius:
         # Invert the direction of the ball horizontally
@@ -62,8 +64,11 @@ def update_ball_position(angle, step):
     if center_y <= ball_radius or center_y >= screen.get_height() - ball_radius:
         # Invert the direction of the ball vertically
         ball_angle = (-ball_angle) % 360        
-        if center_y >= screen.get_height() - ball_radius: ball_step = 0
-        else: center_y = center_y + ball_radius//2
+        if center_y >= screen.get_height() - ball_radius: 
+            ball_step = 0
+            game_over = True
+        else: 
+            center_y = center_y + ball_radius//2
     # Convert angle to radians
     angle_rad = -math.radians(angle)
     # Update position based on angle and step
@@ -141,7 +146,7 @@ def check_bar_collisions():
 # Init game variables
 def game_init():
     global screen, ball_radius, center_x, center_y, ball_angle, ball_step, bar_length, left_bar_angle, left_bar_angle_initial
-    global bar_length, right_bar_angle, right_bar_angle_initial, bar_width, bar_y_offset
+    global bar_length, right_bar_angle, right_bar_angle_initial, bar_width, bar_y_offset, game_over
     # Set ball parameters
     center_x, center_y = screen.get_width() // 2, screen.get_height() // 2
     ball_radius = screen.get_height() // 30  # Make radius of ball depend on screen size
@@ -154,6 +159,8 @@ def game_init():
     bar_y_offset = 250 #screen.get_height() // 4
     left_bar_angle = left_bar_angle_initial
     right_bar_angle = right_bar_angle_initial
+    # Set game state
+    game_over = False
 
 # Create window
 def create_window():
@@ -165,26 +172,43 @@ def create_window():
 # Handle events and user inputs from keyboard
 def handle_events():
     global running, left_bar_angle, right_bar_angle
+    global lkey_pressed, rkey_pressed, game_over
     for ev in pygame.event.get():
         if ev.type == pygame.QUIT:
             running = False
-        # Handle bar rotation with LEFT/RIGHT key
+        # Handle key press           
         if ev.type == pygame.KEYDOWN:
             if ev.key == pygame.K_LEFT:
                 global left_bar_angle
                 left_bar_angle = 0  # Set left bar to horizontal
+                lkey_pressed = True
             if ev.key == pygame.K_RIGHT:
                 global right_bar_angle
                 right_bar_angle = 180  # Set right bar to horizontal (mirrored)
+                rkey_pressed = True
+            if ev.key == pygame.K_RETURN and game_over:
+                # Reset game state
+                game_init()
+                log("Game reset")
+            if ev.key == pygame.K_ESCAPE:
+                if game_over:
+                    log("Game over, press ENTER to reset")
+                    running = False
+                else:
+                    game_over = True
+                    log("Game paused, press ENTER to reset")
+        # Handle key release
         if ev.type == pygame.KEYUP:
             if ev.key == pygame.K_LEFT:
                 left_bar_angle = left_bar_angle_initial  # Return left bar to initial angle
+                lkey_pressed = False
             if ev.key == pygame.K_RIGHT:
                 right_bar_angle = right_bar_angle_initial  # Return right bar to initial angle
+                rkey_pressed = False
 
 # Main game loop
 def main():
-    global screen, running
+    global screen, running, game_over
     
     # Init pygame and create an initial window
     pygame.init()
@@ -196,16 +220,19 @@ def main():
     while running:
         # Analyze inputs and handle events
         handle_events()
+        
         # Aquí se actualiza la lógica del juego
-        update_ball_position(ball_angle, ball_step)
-        check_bar_collisions()    
-        # Aquí se dibujan los objetos
-        screen.fill((0, 60, 0))  # Limpiar pantalla (color negro)
+        if not game_over:
+            update_ball_position(ball_angle, ball_step)
+            check_bar_collisions()    
+        
+        # Draw the objects and update the screen
+        screen.fill((0, 60, 0))  # Clear screen (dark green)
         generate_ball()
         draw_left_bar()
         draw_right_bar()
-        pygame.display.flip()  # Actualizar pantalla
-        clock.tick(60)
+        pygame.display.flip()    # Update the display
+        clock.tick(60)           # Limit to 60 FPS
 
     # Quit pygame
     pygame.quit()
