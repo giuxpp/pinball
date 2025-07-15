@@ -8,12 +8,14 @@ screen = None
 SCREEN_WIDTH = 800
 running = True 
 game_over = True
+bar_colission = False
 rkey_pressed, lkey_pressed = False, False
 
 # Ball parameters
 ball_radius = None
 ball_angle = None
 ball_step = None
+ball_step_init = 10
 center_x, center_y = 100, 100
 ball_color = (100, 100, 100)
 shadow_color = (180, 180, 180)
@@ -21,9 +23,15 @@ highlight_color = (255, 255, 255, 100)
 
 # Bar parameters (generic)
 bar_length = None  # Will be set in game_init
-bar_width = None
+bar_width = 30
 bar_color = (200, 200, 102)  # Mustard yellow color
 bar_y_offset = None
+left_bar_inc = None
+right_bar_inc = None
+bar_inc_init = 2.5   # Defines how "responsive" the bars are when pressed
+bar_inc_step = 0.6  # Increment step for bar angle when pressed
+bar_colission_ctr_init = 8
+bar_colission_ctr = None
 
 # Left Bar parameters
 left_bar_angle_initial = -45
@@ -84,6 +92,8 @@ def draw_left_bar():
     x1 = x0 + bar_length * math.cos(angle_rad)
     y1 = y0 - bar_length * math.sin(angle_rad)
     pygame.draw.line(screen, bar_color, (x0, y0), (x1, y1), bar_width)
+    # Draw circles at both ends for rounded edges
+    pygame.draw.circle(screen, bar_color, (int(x1), int(y1)), bar_width // 2)
 
 # Draws a bar at the bottom right, vertically symmetric to the left bar
 def draw_right_bar():
@@ -95,6 +105,8 @@ def draw_right_bar():
     x1 = x0 + bar_length * -math.cos(angle_rad)
     y1 = y0 - bar_length * -math.sin(angle_rad)
     pygame.draw.line(screen, bar_color, (x0, y0), (x1, y1), bar_width)
+    # Draw circles at both ends for rounded edges
+    pygame.draw.circle(screen, bar_color, (int(x1), int(y1)), bar_width // 2)
 
 # Collision detection between ball and bars
 def check_bar_collisions():
@@ -125,6 +137,14 @@ def check_bar_collisions():
         dist = math.hypot(center_x - closest_x, center_y - closest_y)
         return dist <= ball_radius + bar_width//2
 
+    # Function to check if the ball is moving on right or left direction dependin on the angle
+    def get_ball_direction():
+        # Returns True if the ball is moving to the right, False if to the left
+        if 0 <= ball_angle < 180:
+            return "right"
+        else:
+            return "left"
+
     # Left bar
     left_x0 = 0
     left_y0 = screen.get_height() - bar_y_offset
@@ -133,28 +153,38 @@ def check_bar_collisions():
     right_x0 = screen.get_width()
     right_y0 = screen.get_height() - bar_y_offset
     right_p1, right_p2 = get_bar_endpoints(right_x0, right_y0, -right_bar_angle, bar_length)
-
-    # Only bounce if the ball is moving towards the bar (prevents sticking)
-    bounced = False
     # Bar collisions
     if ball_bar_collision(left_p1, left_p2, bar_width) or ball_bar_collision(right_p1, right_p2, bar_width):
         ball_angle = (-ball_angle) % 360
-        bounced = True
-        log("Ball collided with bar: angle={ball_angle}, center=({center_x}, {center_y})")
-    return bounced
+        center_y -= ball_radius // 2
+        log("Ball collided with bar")
+        global bar_colission
+        bar_colission = True
+        # In order to avoid the ball sticking to the bar, we adjust the position
+        # depending on the direction of the ball
+        if get_ball_direction() == "right":
+            center_x -= ball_radius // 2
+        else:
+            center_x += ball_radius
+
 
 # Init game variables
 def game_init():
     global screen, ball_radius, center_x, center_y, ball_angle, ball_step, bar_length, left_bar_angle, left_bar_angle_initial
     global bar_length, right_bar_angle, right_bar_angle_initial, bar_width, bar_y_offset, game_over
+    global bar_colission_ctr, bar_colission_ctr_init, left_bar_inc, right_bar_inc, bar_inc_init
+    global ball_step_init
+
     # Set ball parameters
     center_x, center_y = screen.get_width() // 2, screen.get_height() // 2
     ball_radius = screen.get_height() // 30  # Make radius of ball depend on screen size
     ball_angle = 75  # Initial angle in degrees
-    ball_step = 5  # Step size for ball movement    
+    ball_step = ball_step_init  # Step size for ball movement    
     # Set bar parameters
     bar_length = screen.get_width() // 2.85
-    bar_width = 20  # Width of the bars
+    bar_colission_ctr = bar_colission_ctr_init
+    left_bar_inc = bar_inc_init
+    right_bar_inc = bar_inc_init
     # Set bar y offset depending on screen height
     bar_y_offset = 250 #screen.get_height() // 4
     left_bar_angle = left_bar_angle_initial
@@ -179,13 +209,11 @@ def handle_events():
         # Handle key press           
         if ev.type == pygame.KEYDOWN:
             if ev.key == pygame.K_LEFT:
-                global left_bar_angle
-                left_bar_angle = 0  # Set left bar to horizontal
                 lkey_pressed = True
+                log("Left key pressed")
             if ev.key == pygame.K_RIGHT:
-                global right_bar_angle
-                right_bar_angle = 180  # Set right bar to horizontal (mirrored)
                 rkey_pressed = True
+                log("Right key pressed")
             if ev.key == pygame.K_RETURN and game_over:
                 # Reset game state
                 game_init()
@@ -200,11 +228,41 @@ def handle_events():
         # Handle key release
         if ev.type == pygame.KEYUP:
             if ev.key == pygame.K_LEFT:
-                left_bar_angle = left_bar_angle_initial  # Return left bar to initial angle
                 lkey_pressed = False
+                log("Left key released")
             if ev.key == pygame.K_RIGHT:
-                right_bar_angle = right_bar_angle_initial  # Return right bar to initial angle
                 rkey_pressed = False
+                log("Right key released")
+
+def update_bars():
+    global left_bar_angle, left_bar_angle_initial, right_bar_angle, right_bar_angle_initial
+    global lkey_pressed, rkey_pressed, left_bar_inc, right_bar_inc, bar_colission, bar_inc_init
+    global bar_inc_step # Increment step for bar angle when pressed
+    # Update left bar angle depending on whether the left key is keep pressed
+    if lkey_pressed:                
+        if not bar_colission:
+            left_bar_angle = min(0, left_bar_angle + left_bar_inc)  # Keep it at or above initial angle
+            left_bar_inc += bar_inc_step
+    else:
+        left_bar_angle = max(left_bar_angle_initial, left_bar_angle- left_bar_inc)  # Reset to initial angle if not pressed
+        if left_bar_angle == left_bar_angle_initial:
+            left_bar_inc = bar_inc_init
+    # Update right bar angle depending on whether the right key is keep pressed
+    if rkey_pressed:
+        if not bar_colission:
+            right_bar_angle = min(180, right_bar_angle + right_bar_inc)  # Keep it at or below initial angle
+            right_bar_inc += bar_inc_step
+    else:
+        right_bar_angle = max(right_bar_angle_initial, right_bar_angle - right_bar_inc)
+        if right_bar_angle == right_bar_angle_initial:
+            right_bar_inc = bar_inc_init
+    if bar_colission:
+        # If a bar collision has been detected, we reset the bar collision flag after a few frames
+        global bar_colission_ctr, bar_colission_ctr_init
+        bar_colission_ctr -= 1
+        if bar_colission_ctr <= 0:
+            bar_colission = False
+            bar_colission_ctr = bar_colission_ctr_init
 
 # Main game loop
 def main():
@@ -222,6 +280,7 @@ def main():
         handle_events()
         
         # Aquí se actualiza la lógica del juego
+        update_bars()
         if not game_over:
             update_ball_position(ball_angle, ball_step)
             check_bar_collisions()    
