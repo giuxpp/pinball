@@ -15,6 +15,7 @@ screen = None
 space = None
 draw_options = None
 left_bar, right_bar = None, None
+body_lbar = None
 
 # Ball parameters
 ball_radius = None
@@ -33,8 +34,8 @@ bar_color = (200, 200, 102)  # Mustard yellow color
 bar_y_offset = None
 left_bar_inc = None
 right_bar_inc = None
-bar_inc_init = 2.5   # Defines how "responsive" the bars are when pressed
-bar_inc_step = 0.6  # Increment step for bar angle when pressed
+bar_inc_init = 0.15   # Defines how "responsive" the bars are when pressed
+bar_inc_step = 0.00006  # Increment step for bar angle when pressed
 bar_colission_ctr_init = 8
 bar_colission_ctr = None
 
@@ -59,7 +60,7 @@ def game_init():
     global ball_step_init
 
     # Set ball parameters
-    center_x, center_y = screen.get_width() // 2, screen.get_height() // 2
+    center_x, center_y = 150,100#screen.get_width() // 2, screen.get_height() // 2
     ball_radius = screen.get_height() // 30  # Make radius of ball depend on screen size
     ball_angle = 75  # Initial angle in degrees
     ball_step = ball_step_init  # Step size for ball movement    
@@ -119,6 +120,11 @@ def handle_events():
                 rkey_pressed = False
                 log("Right key released")
 
+lbar_ang_start = math.radians(45)
+lbar_ang_end = math.radians(0)
+body_rbar = None
+rbar_ang_start = math.radians(135)
+rbar_ang_end = math.radians(180)
 def update_bars():
     global left_bar_angle, left_bar_angle_initial, right_bar_angle, right_bar_angle_initial
     global lkey_pressed, rkey_pressed, left_bar_inc, right_bar_inc, bar_colission, bar_inc_init
@@ -126,28 +132,24 @@ def update_bars():
     global body_lbar
     # Update left bar angle depending on whether the left key is keep pressed
     if lkey_pressed:                        
-            body_lbar.angle  = min(0, body_lbar.angle + left_bar_inc)  # Keep it at or above initial angle
-            left_bar_inc += bar_inc_step
+        body_lbar.angle = max(lbar_ang_end, body_lbar.angle - left_bar_inc)  # Keep it at or above initial angle
+        left_bar_inc += bar_inc_step
+        log("left bar angle = " + str(body_lbar.angle))
     else:
-        left_bar_angle = max(left_bar_angle_initial, left_bar_angle- left_bar_inc)  # Reset to initial angle if not pressed
-        if left_bar_angle == left_bar_angle_initial:
+        body_lbar.angle = min(lbar_ang_start, body_lbar.angle + left_bar_inc)
+        if body_lbar.angle == lbar_ang_end:
             left_bar_inc = bar_inc_init
     # Update right bar angle depending on whether the right key is keep pressed
     if rkey_pressed:
-        if not bar_colission:
-            right_bar_angle = min(180, right_bar_angle + right_bar_inc)  # Keep it at or below initial angle
-            right_bar_inc += bar_inc_step
+        body_rbar.angle = min(rbar_ang_end, body_rbar.angle + right_bar_inc)
+        right_bar_inc += bar_inc_step
+        log("right bar angle = " + str(body_rbar.angle))
     else:
-        right_bar_angle = max(right_bar_angle_initial, right_bar_angle - right_bar_inc)
-        if right_bar_angle == right_bar_angle_initial:
+        body_rbar.angle = max(rbar_ang_start, body_rbar.angle - right_bar_inc)
+        if body_rbar.angle == rbar_ang_end:
             right_bar_inc = bar_inc_init
-    if bar_colission:
-        # If a bar collision has been detected, we reset the bar collision flag after a few frames
-        global bar_colission_ctr, bar_colission_ctr_init
-        bar_colission_ctr -= 1
-        if bar_colission_ctr <= 0:
-            bar_colission = False
-            bar_colission_ctr = bar_colission_ctr_init
+        
+
 
 def create_space():
     global screen, space, draw_options
@@ -165,7 +167,7 @@ def create_ball():
     body_ball = pymunk.Body(mass, moment)
     body_ball.position =center_x, center_y
     shape = pymunk.Circle(body_ball, ball_radius)
-    shape.elasticity = 0.9
+    shape.elasticity = 1.0
     shape.friction = 0.5
     shape.color = [0, 0, 255, 255]
     space.add(body_ball, shape)
@@ -174,34 +176,45 @@ def add_borders():
     # Add static lines to the space to create borders
     global space, screen    
     WIDTH, HEIGHT = screen.get_size()
-    # Create static lines for Left, right, and bottom borders
+    # Create static lines for Up, Left, right, and bottom borders
     static_lines = [
-        pymunk.Segment(space.static_body, (0, 0), (0, HEIGHT), 5),         # izquierda
-        pymunk.Segment(space.static_body, (WIDTH, 0), (WIDTH, HEIGHT), 5), # derecha
-        pymunk.Segment(space.static_body, (0, HEIGHT), (WIDTH, HEIGHT), 5) # piso
+        pymunk.Segment(space.static_body, (0, 0), (0, HEIGHT), 5),          # izquierda
+        pymunk.Segment(space.static_body, (WIDTH, 0), (WIDTH, HEIGHT), 5),  # derecha
+        pymunk.Segment(space.static_body, (0, HEIGHT), (WIDTH, HEIGHT), 5), # piso
+        pymunk.Segment(space.static_body, (0, 0), (WIDTH, 0), 5)            # techo
     ]
     for line in static_lines:
         line.elasticity = 0.8
         space.add(line)
 
-body_lbar = None
 def add_left_bar():
-    # Add left bar to the space
-    global space, screen, bar_length, bar_width, bar_y_offset, left_bar_angle
-    global left_bar, right_bar, body_lbar
-    x0 = 0
-    y0 = screen.get_height() - bar_y_offset
-    angle_rad = math.radians(left_bar_angle)
-    x1 = x0 + bar_length * math.cos(angle_rad)
-    y1 = y0 - bar_length * math.sin(angle_rad)
-
+    global body_lbar, lbar_ang_start, space
     body_lbar = pymunk.Body(body_type=pymunk.Body.KINEMATIC)
-    # The bar's endpoints are in world coordinates, so use them directly
-    a = (x0, y0)
-    b = (x1, y1)
-    left_bar = pymunk.Segment(body_lbar, a, b, bar_width // 2)
-    left_bar.elasticity = 0.8
-    space.add(body_lbar, left_bar)
+    posicion_pivote = 100, 800
+    body_lbar.position = posicion_pivote  # Este será el punto fijo
+    body_lbar.angle = lbar_ang_start
+    a = (0, 0)          # Inicio de la barra (centro de rotación)
+    b = (200, 0)        # Extremo derecho de la barra
+    segment = pymunk.Segment(body_lbar, a, b, 20)
+    segment.elasticity = 1.0
+    segment.friction = 0.5
+    # Agregar cuerpo y segmento
+    space.add(body_lbar, segment)
+
+def add_right_bar():
+    global body_rbar, rbar_ang_start, space
+    body_rbar = pymunk.Body(body_type=pymunk.Body.KINEMATIC)
+    posicion_pivote = 700, 800
+    body_rbar.position = posicion_pivote  # Este será el punto fijo
+    body_rbar.angle = rbar_ang_start
+    a = (200, 0)          # Inicio de la barra (centro de rotación)
+    b = (0, 0)        # Extremo derecho de la barra
+    segment = pymunk.Segment(body_rbar, a, b, 20)
+    segment.elasticity = 1.0
+    segment.friction = 0.5
+    # Agregar cuerpo y segmento
+    space.add(body_rbar, segment)
+
 
 # Main game loop
 def main():
@@ -214,6 +227,7 @@ def main():
     game_init()      # init step 4    
     add_borders()    # Add borders to the game space     
     add_left_bar()
+    add_right_bar()
     clock = pygame.time.Clock()
 
     running = True
